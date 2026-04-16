@@ -1,3 +1,5 @@
+use std::ptr;
+#[derive(Clone, Copy)]
 pub struct BlockHeader {
     size: usize,
 }
@@ -21,6 +23,18 @@ impl BlockHeader {
             self.size |= 1;
         } else {
             self.size &= !1;
+        }
+    }
+    pub fn read_from(location: *const u8) -> Self {
+        unsafe {
+            let header = location as *const BlockHeader;
+            ptr::read(header)
+        }
+    }
+    pub fn write_to(&self, location: *mut u8) {
+        unsafe {
+            let header = location as *mut BlockHeader;
+            ptr::write(header, *self);
         }
     }
 }
