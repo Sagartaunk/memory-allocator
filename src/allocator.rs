@@ -27,6 +27,13 @@ impl Allocator {
             }
         }
     }
+    pub fn dealloc(&mut self, ptr: *mut u8) {
+        //Simply marks the block as unallocated
+        let mut head =
+            BlockHeader::read_from(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+        head.set_allocated(false);
+        head.write_to(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+    }
 }
 pub fn init() -> Allocator {
     let temp: usize = 4096; // 4 kb for testng purposes i think lol
