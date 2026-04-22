@@ -12,11 +12,11 @@ struct Allocator {
 impl Allocator {
     pub fn alloc(&mut self, size: usize) -> *mut u8 {
         let mut current = self.heap_start;
+        let size = (size + 7) & !7; //Allign the size before passing it to the loop otherwise it will cause the loop to run stall
         loop {
             let mut head: BlockHeader = BlockHeader::read_from(current);
             if head.size() >= size && !head.is_allocated() {
                 head.set_allocated(true); //Marks the block as allocated so that the next call to alloc dosent find the same block and cause a bug
-                head.write_to(current);
                 self.split(current, size); //Split the block if its larger than required to manage memory efficiently
                 return unsafe { current.add(HEADER_SIZE) }; //returns the memory address after the header is complete
             }
@@ -82,4 +82,29 @@ pub fn init() -> Allocator {
         header.write_to(alloc.heap_end.sub(HEADER_SIZE));
     }
     alloc
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test] //simple test function
+    fn alloc_split_test() {
+        let mut block = init();
+        let chunk = block.alloc(40);
+        let chunk_header = BlockHeader::read_from(unsafe { chunk.sub(HEADER_SIZE) });
+        println!("chunk: {:?}", chunk);
+        assert_eq!(40, chunk_header.size());
+        assert!(chunk_header.is_allocated());
+        let temp1 = block.alloc(8);
+        let temp2 = block.alloc(29);
+        let temp3 = block.alloc(139);
+        block.dealloc(temp2);
+        block.dealloc(temp1);
+        assert!(!BlockHeader::read_from(unsafe { temp1.sub(HEADER_SIZE) }).is_allocated());
+        println!(
+            "{}",
+            BlockHeader::read_from(unsafe { temp1.sub(HEADER_SIZE) }).size()
+        );
+    }
 }
