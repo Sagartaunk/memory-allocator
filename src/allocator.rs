@@ -33,6 +33,24 @@ impl Allocator {
             BlockHeader::read_from(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
         head.set_allocated(false);
         head.write_to(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+        self.coalesce(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+    }
+    fn coalesce(&mut self, ptr: *mut u8) {
+        let mut current = BlockHeader::read_from(ptr);
+        let prev = BlockHeader::read_from(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+        let next = BlockHeader::read_from(unsafe { ptr.add(current.size()) });
+        let mut position = ptr;
+        let mut size = current.size();
+        if !prev.is_allocated() {
+            size += prev.size();
+            position = unsafe { ptr.sub(prev.size()) };
+        }
+        if !next.is_allocated() {
+            size += next.size();
+        }
+        let header = BlockHeader::new(size, false);
+        header.write_to(position);
+        header.write_to(unsafe { position.add(size - std::mem::size_of::<BlockHeader>()) });
     }
 }
 pub fn init() -> Allocator {
