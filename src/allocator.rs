@@ -1,5 +1,5 @@
 use std::ptr::null_mut;
-
+const HEADER_SIZE: usize = std::mem::size_of::<BlockHeader>(); //Constant stores size of one BlockHeader struct
 use crate::{
     block::BlockHeader,
     heap::{self, heap_grow},
@@ -17,7 +17,8 @@ impl Allocator {
             if head.size() >= size && !head.is_allocated() {
                 head.set_allocated(true); //Marks the block as allocated so that the next call to alloc dosent find the same block and cause a bug
                 head.write_to(current);
-                return unsafe { current.add(std::mem::size_of::<BlockHeader>()) }; //returns the memory address after the header is complete
+                self.split(current, size); //Split the block if its larger than required to manage memory efficiently
+                return unsafe { current.add(HEADER_SIZE) }; //returns the memory address after the header is complete
             }
             unsafe {
                 current = current.add(head.size());
@@ -29,15 +30,15 @@ impl Allocator {
     }
     pub fn dealloc(&mut self, ptr: *mut u8) {
         //Simply marks the block as unallocated
-        let mut head =
-            BlockHeader::read_from(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+        let mut head = BlockHeader::read_from(unsafe { ptr.sub(HEADER_SIZE) });
         head.set_allocated(false);
-        head.write_to(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
-        self.coalesce(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+        head.write_to(unsafe { ptr.sub(HEADER_SIZE) });
+        self.coalesce(unsafe { ptr.sub(HEADER_SIZE) });
     }
     fn coalesce(&mut self, ptr: *mut u8) {
-        let mut current = BlockHeader::read_from(ptr);
-        let prev = BlockHeader::read_from(unsafe { ptr.sub(std::mem::size_of::<BlockHeader>()) });
+        //Combines 2 free blocks to a single bigger free block
+        let current = BlockHeader::read_from(ptr);
+        let prev = BlockHeader::read_from(unsafe { ptr.sub(HEADER_SIZE) });
         let next = BlockHeader::read_from(unsafe { ptr.add(current.size()) });
         let mut position = ptr;
         let mut size = current.size();
@@ -50,7 +51,22 @@ impl Allocator {
         }
         let header = BlockHeader::new(size, false);
         header.write_to(position);
-        header.write_to(unsafe { position.add(size - std::mem::size_of::<BlockHeader>()) });
+        header.write_to(unsafe { position.add(size - HEADER_SIZE) });
+    }
+    fn split(&mut self, ptr: *mut u8, size: usize) {
+        //
+        let header = BlockHeader::read_from(ptr);
+        let free_size = header.size() - size;
+        if free_size < 2 * HEADER_SIZE + 8 {
+            //Check if the remaning storage is big enough to be worth splitting off otherwise return the ptr as is
+            return;
+        }
+        let new_header = BlockHeader::new(size, true);
+        new_header.write_to(ptr);
+        new_header.write_to(unsafe { ptr.add(size - HEADER_SIZE) });
+        let new_header = BlockHeader::new(free_size, false);
+        new_header.write_to(unsafe { ptr.add(size) });
+        new_header.write_to(unsafe { ptr.add(size + free_size - HEADER_SIZE) });
     }
 }
 pub fn init() -> Allocator {
@@ -63,7 +79,7 @@ pub fn init() -> Allocator {
     let header = BlockHeader::new(temp, false);
     unsafe {
         header.write_to(alloc.heap_start);
-        header.write_to(alloc.heap_end.sub(std::mem::size_of::<BlockHeader>()));
+        header.write_to(alloc.heap_end.sub(HEADER_SIZE));
     }
     alloc
 }
