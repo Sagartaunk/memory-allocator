@@ -1,10 +1,18 @@
-use std::ptr::null_mut;
+use std::{
+    alloc::{GlobalAlloc, Layout},
+    ptr::null_mut,
+    sync::{LazyLock, Mutex},
+};
+#[global_allocator]
+pub static MY_ALLOCATOR: MyAllocator = MyAllocator; //Static to tell rust which allocator to use
 const HEADER_SIZE: usize = std::mem::size_of::<BlockHeader>(); //Constant stores size of one BlockHeader struct
+static ALLOCATOR: LazyLock<Mutex<Allocator>> = LazyLock::new(|| Mutex::new(init())); //Global variable to store the Block Pointers
 use crate::{
     block::BlockHeader,
     heap::{self, heap_grow},
 };
-
+unsafe impl Send for Allocator {} //Tells  the compiler its safe to use for the ALLOCATOR static by
+unsafe impl Sync for Allocator {} // Implementing the send and sync trait manually
 struct Allocator {
     heap_start: *mut u8,
     heap_end: *mut u8,
@@ -67,6 +75,20 @@ impl Allocator {
         let new_header = BlockHeader::new(free_size, false);
         new_header.write_to(unsafe { ptr.add(size) });
         new_header.write_to(unsafe { ptr.add(size + free_size - HEADER_SIZE) });
+    }
+}
+
+pub struct MyAllocator; //Zero Sized Struct
+unsafe impl GlobalAlloc for MyAllocator {
+    //Declares the MyAllocator struct as the default memory_allocator instead of system allocator
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let mut guard = ALLOCATOR.lock().unwrap();
+        guard.alloc(layout.size())
+    }
+    unsafe fn dealloc(&self, ptr: *mut u8, _: Layout) {
+        //The trait demands 3 parameters but the 'Layout' is not required here to free the block as the size is already stored in the BlockHeader
+        let mut guard = ALLOCATOR.lock().unwrap();
+        guard.dealloc(ptr)
     }
 }
 pub fn init() -> Allocator {
