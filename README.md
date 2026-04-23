@@ -1,4 +1,4 @@
-# memory-allocator is a free list allocator with bounday tags and coalescing 
+# memory-allocator is a free list allocator with boundary tags and coalescing 
 A heap memory allocator written in Rust from scratch, implementing GlobalAlloc to replace the system allocator.  
 
 ## How does this allocator work ? 
