@@ -23,12 +23,6 @@ impl Allocator {
         let size = (size + 7) & !7; //Allign the size before passing it to the loop otherwise it will cause the loop to run stall
         loop {
             let mut head: BlockHeader = BlockHeader::read_from(current);
-            println!(
-                "checking block at {:?}, size: {}, allocated: {}",
-                current,
-                head.size(),
-                head.is_allocated()
-            ); //Debug lines
             if head.size() >= size && !head.is_allocated() {
                 self.remove_free(current);
                 head.set_allocated(true); //Marks the block as allocated so that the next call to alloc dosent find the same block and cause a bug
@@ -84,27 +78,13 @@ impl Allocator {
             //Check if the remaning storage is big enough to be worth splitting off otherwise return the ptr as is
             return;
         }
-        println!(
-            "split: header.size()={}, size={}, free_size={}",
-            header.size(),
-            size,
-            free_size
-        );
         let new_header = BlockHeader::new(size, true);
         new_header.write_to(ptr);
         new_header.write_to(unsafe { ptr.add(size - HEADER_SIZE) });
         let new_header = BlockHeader::new(free_size, false);
         new_header.write_to(unsafe { ptr.add(size) });
-        println!(
-            "verify before insert_free: {}",
-            BlockHeader::read_from(unsafe { ptr.add(size) }).size()
-        );
         new_header.write_to(unsafe { ptr.add(size + free_size - HEADER_SIZE) });
         self.insert_free(unsafe { ptr.add(size) });
-        println!(
-            "verify after insert_free: {}",
-            BlockHeader::read_from(unsafe { ptr.add(size) }).size()
-        );
     }
     fn insert_free(&mut self, ptr: *mut u8) {
         //Used to insert a pointer to a newly freed block to an old block or create a new 'free_head_start' if none exists
@@ -121,7 +101,6 @@ impl Allocator {
         free_header.write_to(unsafe { ptr.add(HEADER_SIZE) });
         new_header.write_to(unsafe { self.free_head_start.add(HEADER_SIZE) });
         self.free_head_start = ptr;
-        println!("insert_free done, head now: {:?}", self.free_head_start); //Debug line
     }
     fn remove_free(&mut self, ptr: *mut u8) {
         //This is used to remove free block pointers which have been filled or merged to one through coalesce
