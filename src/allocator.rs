@@ -8,7 +8,7 @@ pub static MY_ALLOCATOR: MyAllocator = MyAllocator; //Static to tell rust which 
 const HEADER_SIZE: usize = std::mem::size_of::<BlockHeader>(); //Constant stores size of one BlockHeader struct
 static ALLOCATOR: LazyLock<Mutex<Allocator>> = LazyLock::new(|| Mutex::new(init())); //Global variable to store the Block Pointers
 use crate::{
-    block::BlockHeader,
+    block::{BlockHeader, FreeHeader},
     heap::{self, heap_grow},
 };
 unsafe impl Send for Allocator {} //Tells  the compiler its safe to use for the ALLOCATOR static by
@@ -16,10 +16,11 @@ unsafe impl Sync for Allocator {} // Implementing the send and sync trait manual
 struct Allocator {
     heap_start: *mut u8,
     heap_end: *mut u8,
+    free_head_start: *mut u8,
 }
 impl Allocator {
     pub fn alloc(&mut self, size: usize) -> *mut u8 {
-        let mut current = self.heap_start;
+        let mut current = self.free_head_start;
         let size = (size + 7) & !7; //Allign the size before passing it to the loop otherwise it will cause the loop to run stall
         loop {
             let mut head: BlockHeader = BlockHeader::read_from(current);
@@ -60,6 +61,7 @@ impl Allocator {
         let header = BlockHeader::new(size, false);
         header.write_to(position);
         header.write_to(unsafe { position.add(size - HEADER_SIZE) });
+        self.insert_free(position);
     }
     fn split(&mut self, ptr: *mut u8, size: usize) {
         //
@@ -75,6 +77,57 @@ impl Allocator {
         let new_header = BlockHeader::new(free_size, false);
         new_header.write_to(unsafe { ptr.add(size) });
         new_header.write_to(unsafe { ptr.add(size + free_size - HEADER_SIZE) });
+    }
+    fn insert_free(&mut self, ptr: *mut u8) {
+        //Used to insert a pointer to a newly freed block to an old block or create a new 'free_head_start' if none exists
+        if self.free_head_start.is_null() {
+            let free_header = FreeHeader::new(std::ptr::null_mut(), std::ptr::null_mut());
+            free_header.write_to(ptr);
+            self.free_head_start = ptr;
+            return;
+        }
+        let free_header = FreeHeader::new(std::ptr::null_mut(), self.free_head_start);
+        let mut new_header = FreeHeader::read_from(self.free_head_start);
+        new_header.set_prev(ptr);
+        free_header.write_to(ptr);
+        new_header.write_to(self.free_head_start);
+        self.free_head_start = ptr;
+    }
+    fn remove_free(&mut self, ptr: *mut u8) {
+        //This is used to remove free block pointers which have been filled or merged to one through coalesce
+        //Handles 4 cases : If prev is null , if next is null , if both are null , if both esist
+        if !self.free_head_start.is_null() {
+            let header = FreeHeader::read_from(ptr);
+            let prev_ptr = header.get_prev();
+            let next_ptr = header.get_next();
+            if prev_ptr.is_null() {
+                if next_ptr.is_null() {
+                    self.free_head_start = std::ptr::null_mut();
+                    return;
+                }
+                self.free_head_start = next_ptr;
+                let mut new_header = FreeHeader::read_from(next_ptr);
+                new_header.set_prev(std::ptr::null_mut());
+                new_header.write_to(next_ptr);
+                return;
+            }
+            if next_ptr.is_null() {
+                if prev_ptr.is_null() {
+                    self.free_head_start = std::ptr::null_mut();
+                    return;
+                }
+                let mut header = FreeHeader::read_from(prev_ptr);
+                header.set_next(std::ptr::null_mut());
+                header.write_to(prev_ptr);
+                return;
+            }
+            let mut prev_header = FreeHeader::read_from(prev_ptr);
+            prev_header.set_next(next_ptr);
+            let mut next_header = FreeHeader::read_from(next_ptr);
+            next_header.set_prev(prev_ptr);
+            prev_header.write_to(prev_ptr);
+            next_header.write_to(next_ptr);
+        }
     }
 }
 
@@ -97,6 +150,7 @@ pub fn init() -> Allocator {
     let alloc = Allocator {
         heap_start: location,
         heap_end: unsafe { location.add(temp) },
+        free_head_start: location,
     };
     let header = BlockHeader::new(temp, false);
     unsafe {
@@ -130,3 +184,10 @@ mod tests {
         );
     }
 }
+// ToDo :- Implement the struct FreeHeader properly in the code
+// Push the fisr free block into the free_header field of the Allocator struct
+// remove the block if alloc calls it and instead set the block which is set in the nexxt field of block header and the free head
+// do the same with the prev blocks
+// make alloc go through free_header instead of walking the whole allocator struct
+// Only dealloc walks the allocator struct directly
+// write the block header fields of next and prev to the free memory block after dealloc perfoms all its operations on it
