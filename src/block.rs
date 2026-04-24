@@ -38,3 +38,38 @@ impl BlockHeader {
         }
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct FreeHeader {
+    prev: *mut u8,
+    next: *mut u8,
+}
+impl FreeHeader {
+    pub fn new(prev: *mut u8, next: *mut u8) -> Self {
+        FreeHeader { prev, next }
+    }
+    pub fn read_from(location: *const u8) -> Self {
+        unsafe {
+            let header = location as *const FreeHeader;
+            ptr::read(header)
+        }
+    }
+    pub fn write_to(&self, location: *mut u8) {
+        unsafe {
+            let header = location as *mut FreeHeader;
+            ptr::write(header, *self);
+        }
+    }
+    pub fn set_prev(&mut self, prev: *mut u8) {
+        self.prev = prev;
+    }
+    pub fn set_next(&mut self, next: *mut u8) {
+        self.next = next;
+    }
+    pub fn get_next(&self) -> *mut u8 {
+        self.next
+    }
+    pub fn get_prev(&self) -> *mut u8 {
+        self.prev
+    }
+}
