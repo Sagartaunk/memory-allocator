@@ -20,7 +20,7 @@ struct Allocator {
 impl Allocator {
     pub fn alloc(&mut self, size: usize) -> *mut u8 {
         let mut current = self.free_head_start;
-        let size = (size + 7) & !7; //Allign the size before passing it to the loop otherwise it will cause the loop to run stall
+        let size = (size + 2 * HEADER_SIZE + 7) & !7; //Allign the size before passing it to the loop otherwise it will cause the loop to run stall
         loop {
             let mut head: BlockHeader = BlockHeader::read_from(current);
             if head.size() >= size && !head.is_allocated() {
